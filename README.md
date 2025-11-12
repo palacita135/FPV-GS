@@ -12,3 +12,5 @@ This system brings together performance, clarity, and connectivity with:
 The GCS currently runs fully stable with MAVLink and GSM telemetry, ensuring robust situational data in any environment.
  Next up — integration for radio telemetry, TBS Crossfire, and Betaflight firmware, extending compatibility across both professional UAV and FPV ecosystems.
 This project aims to merge open-source flight control, AI-assisted situational awareness, and intuitive UX design into one cohesive FPV-GCS platform — accessible from any browser, anywhere in the field.
+
+Clone this repository
