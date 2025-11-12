@@ -19,13 +19,23 @@ git clone https://github.com/palacita135/FPV-GS.git
 cd FPV-GS
 python3 gcs.py
 ```
-You need configure the #gsc.py with your drone IP
+
+You need configure the gsc.py with your drone IP
 ```bash
 # === CONFIGURATION ===
 GCS_UDP_PORT = 14550       # Port to receive telemetry from MAVProxy
 DRONE_IP = "YOUR_DRONE_IP" # Drone IP
 DRONE_MAVLINK_PORT = 14550
 WEB_PORT = 3000
+```
+
+At /public/index.html
+```bash
+Line 58
+<img id="videoOverlay" src="http://DRONE_IP:8080/?action=stream"
+
+Line 90
+Cesium.Ion.defaultAccessToken='CESIUM_API_KEY';
 ```
 
 HAPPY FLYING
