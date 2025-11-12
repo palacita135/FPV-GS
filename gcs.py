@@ -8,9 +8,9 @@ from pymavlink import mavutil
 from aiohttp import web
 
 # === CONFIGURATION ===
-GCS_UDP_PORT = 14555       # Port to receive telemetry from MAVProxy
-DRONE_IP = "172.25.248.200"
-DRONE_MAVLINK_PORT = 14555
+GCS_UDP_PORT = 14550       # Port to receive telemetry from MAVProxy
+DRONE_IP = "YOUR_DRONE_IP" # Drone IP
+DRONE_MAVLINK_PORT = 14550
 WEB_PORT = 3000
 
 os.makedirs("logs", exist_ok=True)
@@ -225,3 +225,4 @@ if __name__ == "__main__":
     finally:
         tlog_file.close()
         print("📁 Flight log saved.")
+
