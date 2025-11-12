@@ -55,7 +55,7 @@ body, #cesiumContainer { margin:0; padding:0; width:100%; height:100%; backgroun
 <body>
 <div id="cesiumContainer"></div>
 
-<img id="videoOverlay" src="http://172.25.248.200:8080/?action=stream"
+<img id="videoOverlay" src="http://DRONE_IP:8080/?action=stream"
      onerror="this.style.display='none';document.getElementById('connectionStatus').innerText='⚠️ Video Offline'">
 
 <canvas id="hudCanvas" width="200" height="200"></canvas>
@@ -87,7 +87,7 @@ body, #cesiumContainer { margin:0; padding:0; width:100%; height:100%; backgroun
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/proj4js/2.8.0/proj4.js"></script>
 <script>
-Cesium.Ion.defaultAccessToken='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJqdGkiOiI2OGE5MjIxYy0wYzlkLTQ1NWUtODQ4NC1jMmEwMGUzMGY0NzQiLCJpZCI6MTUwNzI5LCJpYXQiOjE2ODgyODA3NTR9.TqxqpXPva3twXt-f2BV0_sWCNPhlf6Gat_RpdAstPSU';
+Cesium.Ion.defaultAccessToken='CESIUM_API_KEY';
 
 let viewer = new Cesium.Viewer('cesiumContainer',{
   sceneMode:Cesium.SceneMode.SCENE3D,
