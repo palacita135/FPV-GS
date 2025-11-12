@@ -14,3 +14,10 @@ The GCS currently runs fully stable with MAVLink and GSM telemetry, ensuring rob
 This project aims to merge open-source flight control, AI-assisted situational awareness, and intuitive UX design into one cohesive FPV-GCS platform — accessible from any browser, anywhere in the field.
 
 Clone this repository
+```bash
+git clone https://github.com/palacita135/FPV-GS.git
+cd FPV-GS
+python3 gcs.py
+```
+
+HAPPY FLYING
