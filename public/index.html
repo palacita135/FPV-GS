@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>FPV - GCS</title>
+<script src="https://cesium.com/downloads/cesiumjs/releases/1.122/Build/Cesium/Cesium.js"></script>
+<link href="https://cesium.com/downloads/cesiumjs/releases/1.122/Build/Cesium/Widgets/widgets.css" rel="stylesheet"/>
+<style>
+body, #cesiumContainer { margin:0; padding:0; width:100%; height:100%; background:#000; overflow:hidden; }
+#cesiumContainer { position:absolute; top:0; left:0; right:0; bottom:0; }
+#videoOverlay {
+  position:absolute; bottom:60px; right:20px;
+  width:320px; height:240px; border:2px solid lime;
+  background:black; z-index:1000;
+  box-shadow:0 0 10px rgba(0,255,0,0.5);
+}
+#hudCanvas {
+  position:absolute; top:20px; left:20px; width:200px; height:200px;
+  z-index:1000; pointer-events:none;
+}
+#headingArrow {
+  position:absolute; top:10px; left:50%;
+  width:50px; height:50px; transform:translateX(-50%) rotate(0deg);
+  transform-origin:center center; z-index:1000;
+  pointer-events:none;
+}
+#telemetry {
+  position:absolute; top:240px; left:20px;
+  color:lime; background:rgba(0,0,0,0);
+  padding:12px; border-radius:6px; z-index:1000; line-height:1.6; max-width:250px;
+}
+#statusPanel {
+  position:absolute; top:20px; right:20px;
+  color:cyan; background:rgba(0,0,0,0); padding:10px;
+  border-radius:6px; z-index:1000; font-size:14px;
+}
+#controls {
+  position:absolute; bottom:20px; left:50%; transform:translateX(-50%);
+  display:flex; gap:10px; z-index:1000;
+}
+#controls button {
+  padding:8px 16px; font-size:14px; font-weight:bold;
+  border:none; border-radius:4px; cursor:pointer; box-shadow:0 2px 4px rgba(0, 0, 0, 0);
+}
+#rtlBtn { background:#d32f2f; color:white; }
+#homeBtn { background:#1976d2; color:white; }
+#connectBtn { background:#388e3c; color:white; }
+#viewToggleBtn { background:#fbc02d; color:black; }
+#connectionStatus {
+  position:absolute; bottom:20px; right:20px; color:white;
+  background:rgba(0, 0, 0, 0); padding:6px 10px; border-radius:4px; z-index:1000;
+}
+</style>
+</head>
+<body>
+<div id="cesiumContainer"></div>
+
+<img id="videoOverlay" src="http://172.25.248.200:8080/?action=stream"
+     onerror="this.style.display='none';document.getElementById('connectionStatus').innerText='⚠️ Video Offline'">
+
+<canvas id="hudCanvas" width="200" height="200"></canvas>
+<img id="headingArrow" src="HeadingArrow.png" alt="Heading Arrow">
+
+<div id="telemetry">
+  <div>Alt: <span id="alt">--</span> m</div>
+  <div>Spd: <span id="spd">--</span> m/s</div>
+  <div>Bat: <span id="volt">--</span>V / <span id="curr">--</span>A</div>
+  <div>Roll: <span id="roll">--</span>° Pitch: <span id="pitch">--</span>°</div>
+  <div>Yaw: <span id="yaw">--</span>°</div>
+</div>
+
+<div id="statusPanel">
+  <div>GPS: <span id="gpsStatus">--</span> | Sat: <span id="satellites">--</span></div>
+  <div>Mode: <span id="flightMode">--</span> | ARMED: <span id="armedStatus">--</span></div>
+  <div>HDOP: <span id="hdop">--</span> | Vibe: <span id="vibe">--</span></div>
+  <div>UTM: <span id="utm">--</span></div>
+</div>
+
+<div id="controls">
+  <button id="connectBtn">🔌 Connect</button>
+  <button id="rtlBtn" disabled>🏠 RTL</button>
+  <button id="homeBtn" disabled>📍 Set Home</button>
+  <button id="viewToggleBtn">🎥 Video</button>
+</div>
+
+<div id="connectionStatus">❌ Disconnected</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/proj4js/2.8.0/proj4.js"></script>
+<script>
+Cesium.Ion.defaultAccessToken='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJqdGkiOiI2OGE5MjIxYy0wYzlkLTQ1NWUtODQ4NC1jMmEwMGUzMGY0NzQiLCJpZCI6MTUwNzI5LCJpYXQiOjE2ODgyODA3NTR9.TqxqpXPva3twXt-f2BV0_sWCNPhlf6Gat_RpdAstPSU';
+
+let viewer = new Cesium.Viewer('cesiumContainer',{
+  sceneMode:Cesium.SceneMode.SCENE3D,
+  timeline:false, animation:false,
+  baseLayerPicker:false, fullscreenButton:false, homeButton:false,
+  sceneModePicker:false, navigationHelpButton:false,
+  geocoder:false, infoBox:false
+});
+viewer.scene.globe.depthTestAgainstTerrain=true;
+
+// Drone as PNG billboard
+let drone = viewer.entities.add({
+  position:Cesium.Cartesian3.fromDegrees(0,0,0),
+  billboard:{ image:'plane.png', width:48, height:48 },
+  path:new Cesium.PathGraphics({ width:3, material:Cesium.Color.CYAN, leadTime:0, trailTime:120 })
+});
+
+const hud=document.getElementById('hudCanvas').getContext('2d');
+const headingArrow=document.getElementById('headingArrow');
+
+let tel={roll:0,pitch:0,yaw:0,lat:0,lon:0,alt:0,spd:0,volt:0,curr:0,connected:false,
+         gps:0,satellites:0,hdop:0,mode:0,armed:false,vibe:0};
+
+const modeNames={0:"MANUAL",2:"STABILIZE",10:"AUTO",11:"RTL",12:"LOITER",15:"GUIDED",17:"ALT_HOLD"};
+
+function drawHUD(){
+  const ctx=hud, W=200, H=200; ctx.clearRect(0,0,W,H);
+  const cx=W/2, cy=H/2, radius=90;
+  const pitchOffset=(tel.pitch||0)*2;
+
+  // last working HUD (circle, moving horizon, pitch lines, compass)
+  ctx.save();
+  ctx.translate(cx,cy);
+  ctx.rotate(-(tel.roll||0)*Math.PI/180);
+
+  // Sky/Ground gradient
+  const grad=ctx.createLinearGradient(0,-radius+pitchOffset,0,radius+pitchOffset);
+  grad.addColorStop(0,'#87CEEB');
+  grad.addColorStop(0.5,'#004488');
+  grad.addColorStop(0.5,'#885500');
+  grad.addColorStop(1,'#8B4513');
+  ctx.fillStyle=grad;
+  ctx.beginPath(); ctx.arc(0,0,radius,0,2*Math.PI);
+  ctx.fill();
+
+  // animated pitch lines
+  const time=Date.now()/1000;
+  ctx.strokeStyle='lime'; ctx.lineWidth=1; ctx.font='10px monospace'; ctx.fillStyle='lime'; ctx.textAlign='center';
+  for(let p=-45;p<=45;p+=5){
+    let y=-p*2+pitchOffset+Math.sin(time+p)*1.2;
+    if(Math.abs(y)>radius) continue;
+    ctx.beginPath(); ctx.moveTo(-10,y); ctx.lineTo(10,y); ctx.stroke();
+    if(p!==0 && Math.abs(p)%15===0) ctx.fillText(p,0,y-2);
+  }
+
+  // compass
+  for(let a=0;a<360;a+=15){
+    let rad=a*Math.PI/180, x=Math.sin(rad)*radius, y=-Math.cos(rad)*radius;
+    ctx.beginPath(); ctx.moveTo(x*0.9,y*0.9); ctx.lineTo(x,y);
+    ctx.strokeStyle='yellow'; ctx.lineWidth=(a%45===0?2:1); ctx.stroke();
+    if(a%45===0){
+      ctx.fillStyle='yellow'; ctx.font='10px monospace'; ctx.textAlign='center';
+      const dirs={0:'N',90:'E',180:'S',270:'W'}; ctx.fillText(dirs[a]||'',x*0.75,y*0.75);
+    }
+  }
+
+  // HUD border
+  ctx.strokeStyle='white'; ctx.lineWidth=2; ctx.beginPath(); ctx.arc(0,0,radius,0,2*Math.PI); ctx.stroke();
+  ctx.restore();
+
+  requestAnimationFrame(drawHUD);
+}
+drawHUD();
+
+// WebSocket telemetry
+const connectBtn=document.getElementById('connectBtn');
+const rtlBtn=document.getElementById('rtlBtn');
+const homeBtn=document.getElementById('homeBtn');
+const statusEl=document.getElementById('connectionStatus');
+const viewToggleBtn=document.getElementById('viewToggleBtn');
+const videoOverlay=document.getElementById('videoOverlay');
+let showVideo=true, ws=null;
+
+function updateUTM(lat, lon){
+  if(!lat || !lon) return '--';
+  const utm=proj4('EPSG:4326','EPSG:32633',[lon,lat]);
+  return `E:${utm[0].toFixed(1)} N:${utm[1].toFixed(1)}`;
+}
+
+// ---- New HOME + RTL logic ----
+let homeEntity=null;
+let homeCoords=null;
+
+homeBtn.onclick=()=>{
+  if(!tel.lat||!tel.lon){ alert('⚠️ No GPS fix yet!'); return; }
+  if(homeEntity) viewer.entities.remove(homeEntity);
+  homeCoords={lat:tel.lat,lon:tel.lon,alt:tel.alt||0};
+
+  homeEntity=viewer.entities.add({
+    name:'Home',
+    position:Cesium.Cartesian3.fromDegrees(homeCoords.lon,homeCoords.lat,homeCoords.alt),
+    point:{ pixelSize:12, color:Cesium.Color.LIME, outlineColor:Cesium.Color.WHITE, outlineWidth:2 },
+    label:{ text:'HOME', font:'14px sans-serif', style:Cesium.LabelStyle.FILL_AND_OUTLINE,
+            fillColor:Cesium.Color.LIME, outlineWidth:2, verticalOrigin:Cesium.VerticalOrigin.BOTTOM,
+            pixelOffset:new Cesium.Cartesian2(0,-20) }
+  });
+  fetch('/set-home',{method:'POST'});
+  statusEl.innerText='📍 Home Set';
+  viewer.flyTo(homeEntity);
+};
+
+rtlBtn.onclick=()=>{
+  if(!homeCoords){ alert('⚠️ Home not set yet!'); return; }
+
+  const start=Cesium.Cartesian3.fromDegrees(tel.lon||0,tel.lat||0,tel.alt||0);
+  const end=Cesium.Cartesian3.fromDegrees(homeCoords.lon,homeCoords.lat,homeCoords.alt+20);
+
+  let t=0;
+  const step=()=>{
+    t+=0.01;
+    if(t>1){ statusEl.innerText='🏠 RTL Arrived'; return; }
+    const lat=tel.lat+(homeCoords.lat-tel.lat)*t;
+    const lon=tel.lon+(homeCoords.lon-tel.lon)*t;
+    const alt=tel.alt+(homeCoords.alt-tel.alt)*t;
+    const pos=Cesium.Cartesian3.fromDegrees(lon,lat,alt);
+    drone.position=pos;
+    viewer.camera.setView({destination:pos});
+    requestAnimationFrame(step);
+  };
+  step();
+  fetch('/rtl',{method:'POST'});
+  statusEl.innerText='🏠 RTL Engaged';
+};
+
+// ---- Telemetry stream ----
+function connectWS(){
+  if(ws) ws.close();
+  ws=new WebSocket(`ws://${location.hostname}:3000/ws`);
+  ws.onopen=()=>{ statusEl.innerText='✅ Connected'; connectBtn.innerText='🔌 Disconnect'; rtlBtn.disabled=false; homeBtn.disabled=false; };
+  ws.onmessage=(e)=>{
+    tel=JSON.parse(e.data);
+
+    document.getElementById('alt').innerText=(tel.alt||0).toFixed(1);
+    document.getElementById('spd').innerText=(tel.spd||0).toFixed(1);
+    document.getElementById('volt').innerText=tel.volt||'--';
+    document.getElementById('curr').innerText=tel.curr||'--';
+    document.getElementById('roll').innerText=tel.roll||'--';
+    document.getElementById('pitch').innerText=tel.pitch||'--';
+    document.getElementById('yaw').innerText=tel.yaw||'--';
+    const gpsText=tel.gps?(tel.gps===3?'3D Fix':tel.gps===2?'2D Fix':'No Fix'):'--';
+    document.getElementById('gpsStatus').innerText=gpsText;
+    document.getElementById('satellites').innerText=tel.satellites||'--';
+    document.getElementById('hdop').innerText=tel.hdop?tel.hdop.toFixed(2):'--';
+    document.getElementById('vibe').innerText=tel.vibe?tel.vibe.toFixed(3):'--';
+    document.getElementById('flightMode').innerText=modeNames[tel.mode]||`MODE ${tel.mode}`;
+    document.getElementById('armedStatus').innerText=tel.armed?'ARMED':'DISARMED';
+    document.getElementById('armedStatus').style.color=tel.armed?'red':'lime';
+
+    if(tel.yaw!==undefined) headingArrow.style.transform=`translateX(-50%) rotate(${tel.yaw}deg)`;
+
+    if(tel.connected&&viewer&&tel.lat&&tel.lon){
+      statusEl.innerText='📡 Telemetry';
+      const pos=Cesium.Cartesian3.fromDegrees(tel.lon,tel.lat,tel.alt||0);
+      drone.position=pos;
+      drone.orientation=Cesium.Transforms.headingPitchRollQuaternion(pos,
+        new Cesium.HeadingPitchRoll(Cesium.Math.toRadians(tel.yaw||0),
+        Cesium.Math.toRadians(tel.pitch||0),
+        Cesium.Math.toRadians(tel.roll||0)));
+      viewer.camera.setView({
+        destination:Cesium.Cartesian3.fromDegrees(tel.lon,tel.lat,(tel.alt||0)+150),
+        orientation:{heading:Cesium.Math.toRadians(tel.yaw||0),pitch:Cesium.Math.toRadians(-30),roll:0.0}
+      });
+      document.getElementById('utm').innerText=updateUTM(tel.lat,tel.lon);
+    } else if(!tel.connected){ statusEl.innerText='⚠️ Drone Disconnected'; }
+  };
+  ws.onclose=()=>{ statusEl.innerText='❌ Disconnected'; connectBtn.innerText='🔌 Connect'; rtlBtn.disabled=true; homeBtn.disabled=true; setTimeout(connectWS,3000); };
+}
+
+connectBtn.onclick=()=>{ if(ws&&ws.readyState===WebSocket.OPEN) ws.close(); else connectWS(); };
+viewToggleBtn.onclick=()=>{ showVideo=!showVideo; videoOverlay.style.display=showVideo?'block':'none'; viewToggleBtn.innerText=showVideo?'🗺 Map':'🎥 Video'; };
+
+connectWS();
+</script>
+</body>
+</html>
